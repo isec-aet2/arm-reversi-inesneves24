@@ -23,7 +23,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stm32f769i_discovery.h"
+#include "stm32f769i_discovery_lcd.h"
+#include "stdio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,21 +35,29 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define TEMP_REFRESH_PERIOD   1000    /* Internal temperature refresh period */
+#define MAX_CONVERTED_VALUE   4095    /* Max converted value */
+#define AMBIENT_TEMP            25    /* Ambient Temperature */
+#define VSENS_AT_AMBIENT_TEMP  760    /* VSENSE value (mv) at ambient temperature */
+#define AVG_SLOPE               25    /* Avg_Solpe multiply by 10 */
+#define VREF                  3300
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+volatile int flag=0;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
 
 DMA2D_HandleTypeDef hdma2d;
 
 DSI_HandleTypeDef hdsi;
 
 LTDC_HandleTypeDef hltdc;
+
+TIM_HandleTypeDef htim6;
 
 SDRAM_HandleTypeDef hsdram1;
 
@@ -58,17 +68,28 @@ SDRAM_HandleTypeDef hsdram1;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_ADC1_Init(void);
 static void MX_DMA2D_Init(void);
 static void MX_DSIHOST_DSI_Init(void);
 static void MX_FMC_Init(void);
 static void MX_LTDC_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void LCD_Config();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
+{
 
+	if(htim->Instance == TIM6)
+		{
+		BSP_LED_Toggle(LED_RED);
+			flag++;
+
+		}
+}
 /* USER CODE END 0 */
 
 /**
@@ -78,7 +99,9 @@ static void MX_LTDC_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	char string[10];
+	uint32_t ConvertedValue;
+	long int JTemp;
   /* USER CODE END 1 */
   
 
@@ -106,18 +129,40 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_ADC1_Init();
   MX_DMA2D_Init();
   MX_DSIHOST_DSI_Init();
   MX_FMC_Init();
   MX_LTDC_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_Base_Start_IT(&htim6);
+  BSP_LED_Init(LED_RED);
+  BSP_LED_Init(LED_GREEN);
+  BSP_LCD_Init();
+  LCD_Config();
+  HAL_ADC_Start(&hadc1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+		if (flag)  //quando passar 2 segundos
+		{
+			BSP_LED_Toggle(LED_GREEN);
+			flag = 0;  //coltar a colocar o contador a 0
+			ConvertedValue = HAL_ADC_GetValue(&hadc1); //tirar o valor do adc 1
+			JTemp = ((((ConvertedValue * VREF) / MAX_CONVERTED_VALUE)
+					- VSENS_AT_AMBIENT_TEMP) * 10 / AVG_SLOPE) + AMBIENT_TEMP; //converter a temperatura
+
+			sprintf(string, "Temp = %d ", (int) JTemp);
+			//BSP_LCD_ClearStringLine(18);
+			BSP_LCD_DisplayStringAt(0, 9 * BSP_LCD_GetYSize() / 10,
+								"                  ", RIGHT_MODE);
+			BSP_LCD_DisplayStringAt(0, 9 * BSP_LCD_GetYSize() / 10,
+					(uint8_t *) string, RIGHT_MODE);
+		}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -183,6 +228,56 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion) 
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_56CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -415,6 +510,44 @@ static void MX_LTDC_Init(void)
 
 }
 
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 19999;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 19999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
 /* FMC initialization function */
 static void MX_FMC_Init(void)
 {
@@ -483,7 +616,53 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void LCD_Config(void)
+{
+  uint32_t  lcd_status = LCD_OK;
 
+  /* Initialize the LCD */
+  lcd_status = BSP_LCD_Init();
+  while(lcd_status != LCD_OK);
+
+  BSP_LCD_LayerDefaultInit(0, LCD_FB_START_ADDRESS);
+
+  /* Clear the LCD */
+  BSP_LCD_Clear(LCD_COLOR_WHITE);
+
+  /* Set LCD Example description */
+
+  BSP_LCD_SetTextColor(LCD_COLOR_DARKRED);
+  BSP_LCD_FillRect(BSP_LCD_GetYSize(), 0, BSP_LCD_GetXSize()-BSP_LCD_GetYSize(), 60);
+  BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
+  BSP_LCD_SetBackColor(LCD_COLOR_DARKRED);
+  BSP_LCD_SetFont(&Font24);
+  BSP_LCD_DisplayStringAt(BSP_LCD_GetXSize()/6, 10, (uint8_t *)"REVERSI", RIGHT_MODE);
+
+  BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+  BSP_LCD_DrawRect(0, 0, BSP_LCD_GetYSize(), BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(0, 60, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(2*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(3*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(4*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(5*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(6*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(7*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  BSP_LCD_DrawRect(1,BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  BSP_LCD_DrawRect(1,2*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  BSP_LCD_DrawRect(1,3*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  BSP_LCD_DrawRect(1,4*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  BSP_LCD_DrawRect(1,5*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  BSP_LCD_DrawRect(1,6*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  BSP_LCD_DrawRect(1,7*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+
+
+
+
+  BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+  BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+  BSP_LCD_SetFont(&Font24);
+}
 /* USER CODE END 4 */
 
 /**
