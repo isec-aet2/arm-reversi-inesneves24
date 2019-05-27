@@ -636,7 +636,7 @@ static void LCD_Config(void)
   BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
   BSP_LCD_SetBackColor(LCD_COLOR_DARKRED);
   BSP_LCD_SetFont(&Font24);
-  BSP_LCD_DisplayStringAt(BSP_LCD_GetXSize()/6, 10, (uint8_t *)"REVERSI", RIGHT_MODE);
+  BSP_LCD_DisplayStringAt(BSP_LCD_GetXSize()/9, 10, (uint8_t *)"REVERSI", RIGHT_MODE);
 
   BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
   BSP_LCD_DrawRect(0, 0, BSP_LCD_GetYSize(), BSP_LCD_GetYSize());
