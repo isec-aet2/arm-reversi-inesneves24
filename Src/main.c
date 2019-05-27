@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "stm32f769i_discovery.h"
 #include "stm32f769i_discovery_lcd.h"
+#include "stm32f769i_discovery_ts.h"
 #include "stdio.h"
 /* USER CODE END Includes */
 
@@ -41,11 +42,27 @@
 #define VSENS_AT_AMBIENT_TEMP  760    /* VSENSE value (mv) at ambient temperature */
 #define AVG_SLOPE               25    /* Avg_Solpe multiply by 10 */
 #define VREF                  3300
+#define lincol0     0 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol1		1 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol2		2 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol3		3 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol4		4 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol5		5 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol6		6 *(BSP_LCD_GetYSize()/8) + 30
+#define lincol7		7 *(BSP_LCD_GetYSize()/8) + 30
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 volatile int flag=0;
+volatile int contador=0;
+volatile int jogada;
+volatile int linha;
+volatile int coluna;
+volatile uint8_t f_lcdPressed = 0;
+TS_StateTypeDef TS_State;
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -80,16 +97,66 @@ static void LCD_Config();
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void setPosition(uint16_t x, uint16_t y)
+{
+	if(x<=BSP_LCD_GetYSize()/8)
+		coluna=lincol0;
+	else if(x<=2*BSP_LCD_GetYSize()/8 && x>BSP_LCD_GetYSize()/8)
+		coluna=lincol1;
+	else if(x<=3*BSP_LCD_GetYSize()/8 && x>2*BSP_LCD_GetYSize()/8)
+		coluna=lincol2;
+	else if(x<=4*BSP_LCD_GetYSize()/8 && x>3*BSP_LCD_GetYSize()/8)
+		coluna=lincol3;
+	else if(x<=5*BSP_LCD_GetYSize()/8 && x>4*BSP_LCD_GetYSize()/8)
+		coluna=lincol4;
+	else if(x<=6*BSP_LCD_GetYSize()/8 && x>5*BSP_LCD_GetYSize()/8)
+		coluna=lincol5;
+	else if(x<=7*BSP_LCD_GetYSize()/8 && x>6*BSP_LCD_GetYSize()/8)
+		coluna=lincol6;
+	else if(x<=8*BSP_LCD_GetYSize()/8 && x>7*BSP_LCD_GetYSize()/8)
+		coluna=lincol7;
+
+	if(y<=BSP_LCD_GetYSize()/8)
+		linha=lincol0;
+	else if(y<=2*BSP_LCD_GetYSize()/8 && y>BSP_LCD_GetYSize()/8)
+		linha=lincol1;
+	else if(y<=3*BSP_LCD_GetYSize()/8 && y>2*BSP_LCD_GetYSize()/8)
+		linha=lincol2;
+	else if(y<=4*BSP_LCD_GetYSize()/8 && y>3*BSP_LCD_GetYSize()/8)
+		linha=lincol3;
+	else if(y<=5*BSP_LCD_GetYSize()/8 && y>4*BSP_LCD_GetYSize()/8)
+		linha=lincol4;
+	else if(y<=6*BSP_LCD_GetYSize()/8 && y>5*BSP_LCD_GetYSize()/8)
+		linha=lincol5;
+	else if(y<=7*BSP_LCD_GetYSize()/8 && y>6*BSP_LCD_GetYSize()/8)
+		linha=lincol6;
+	else if(y<=8*BSP_LCD_GetYSize()/8 && y>7*BSP_LCD_GetYSize()/8)
+		linha=lincol7;
+
+}
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
 {
 
 	if(htim->Instance == TIM6)
 		{
-		BSP_LED_Toggle(LED_RED);
 			flag++;
-
 		}
 }
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if(f_lcdPressed == 0)
+	{
+		//If pressed (first interruption)
+		if(GPIO_Pin== GPIO_PIN_13)
+		{
+			BSP_TS_GetState(&TS_State);
+			jogada = 1;
+		}
+		f_lcdPressed = 1;
+
+	}
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -100,6 +167,7 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	char string[10];
+	char space[]={"                  "};
 	uint32_t ConvertedValue;
 	long int JTemp;
   /* USER CODE END 1 */
@@ -142,28 +210,54 @@ int main(void)
   BSP_LCD_Init();
   LCD_Config();
   HAL_ADC_Start(&hadc1);
+  BSP_TS_Init(BSP_LCD_GetXSize(),BSP_LCD_GetYSize());
+  BSP_TS_ITConfig();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-		if (flag)  //quando passar 2 segundos
+		if(flag)  //quando passar 2 segundos	//Sample and print temperature on lcd
 		{
-			BSP_LED_Toggle(LED_GREEN);
 			flag = 0;  //coltar a colocar o contador a 0
 			ConvertedValue = HAL_ADC_GetValue(&hadc1); //tirar o valor do adc 1
 			JTemp = ((((ConvertedValue * VREF) / MAX_CONVERTED_VALUE)
 					- VSENS_AT_AMBIENT_TEMP) * 10 / AVG_SLOPE) + AMBIENT_TEMP; //converter a temperatura
 
 			sprintf(string, "Temp = %d ", (int) JTemp);
-			//BSP_LCD_ClearStringLine(18);
 			BSP_LCD_DisplayStringAt(0, 9 * BSP_LCD_GetYSize() / 10,
-								"                  ", RIGHT_MODE);
+					(uint8_t *) space, RIGHT_MODE);
 			BSP_LCD_DisplayStringAt(0, 9 * BSP_LCD_GetYSize() / 10,
 					(uint8_t *) string, RIGHT_MODE);
 		}
-    /* USER CODE END WHILE */
+
+
+		if(jogada)
+		{
+			HAL_Delay(100);
+			if(TS_State.touchX[0]<BSP_LCD_GetYSize() )
+			{
+				setPosition(TS_State.touchX[0], TS_State.touchY[0]);
+				if(contador%2==0)
+				{
+					BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+					BSP_LCD_FillCircle(coluna, linha, 20);
+				}
+				else
+				{
+					BSP_LCD_SetTextColor(LCD_COLOR_RED);
+					BSP_LCD_FillCircle(coluna, linha, 20);
+				}
+				contador++;
+			}
+
+			jogada=0;
+			f_lcdPressed = 0;
+
+
+		}
+		/* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
@@ -530,7 +624,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 19999;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 19999;
+  htim6.Init.Period = 9999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -602,6 +696,7 @@ static void MX_FMC_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
@@ -612,6 +707,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOJ_CLK_ENABLE();
+
+  /*Configure GPIO pin : PI13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOI, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
@@ -641,27 +746,31 @@ static void LCD_Config(void)
   BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
   BSP_LCD_DrawRect(0, 0, BSP_LCD_GetYSize(), BSP_LCD_GetYSize());
   BSP_LCD_DrawRect(0, 60, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(2*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(3*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(4*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(5*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(6*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(7*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
-  BSP_LCD_DrawRect(1,BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
-  BSP_LCD_DrawRect(1,2*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
-  BSP_LCD_DrawRect(1,3*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
-  BSP_LCD_DrawRect(1,4*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
-  BSP_LCD_DrawRect(1,5*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
-  BSP_LCD_DrawRect(1,6*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
-  BSP_LCD_DrawRect(1,7*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
 
-
-
+  for(int i=1; i<8; i++)
+  {
+	  BSP_LCD_DrawRect(i*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
+  }
+  for(int j=0; j<8; j++)
+  {
+	  BSP_LCD_DrawRect(1,j*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
+  }
 
   BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
   BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
   BSP_LCD_SetFont(&Font24);
+
+  BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+  BSP_LCD_FillCircle(lincol3, lincol3, 20);
+  BSP_LCD_FillCircle(lincol4, lincol4, 20);
+
+  BSP_LCD_SetTextColor(LCD_COLOR_RED);
+  BSP_LCD_FillCircle(lincol3, lincol4, 20);
+  BSP_LCD_FillCircle(lincol4, lincol3, 20);
+
+  BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+
+
 }
 /* USER CODE END 4 */
 
