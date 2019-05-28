@@ -60,8 +60,15 @@ volatile int contador=0;
 volatile int jogada;
 volatile int linha;
 volatile int coluna;
+int getxyBoardPosition=(480/8);
 volatile uint8_t f_lcdPressed = 0;
+int gameBoard[8][8];
 TS_StateTypeDef TS_State;
+int linhaverde;
+int colunaverde;
+int countRed=0;
+int countBlack=0;
+int playgame=1;
 
 /* USER CODE END PM */
 
@@ -134,6 +141,192 @@ void setPosition(uint16_t x, uint16_t y)
 		linha=lincol7;
 
 }
+int checkBoardPlace(int gameBoard[8][8])
+{
+	int l= (linha-30)/getxyBoardPosition;
+	int c= (coluna-30)/getxyBoardPosition;
+
+	int resultado=gameBoard[l][c];
+
+	return resultado;
+}
+void putInBoard(int gameBoard[8][8], int player)
+{
+	int l=(linha-30)/getxyBoardPosition;
+	int c=(coluna-30)/getxyBoardPosition;
+	gameBoard[l][c]=player;
+}
+void putInBoardFirstPositions(int gameBoard[8][8], int player, int lin, int col)
+{
+
+	gameBoard[lin][col]=player;
+}
+void BoardMatrixInitial() {
+	for (int i = 0; i < 8; i++) {
+		for (int j = 0; j < 8; j++) {
+			gameBoard[i][j] = 0;
+
+		}
+	}
+}
+int checkTrapped(int gameBoard[8][8], int player, int row, int col, int i, int j){ //checks if the enemy pieces are trapped
+
+    int mult;
+    for(mult=1; 1 ; mult++) {
+        if (mult*i+row<0 || mult*i+row>=8 || //stops from crossing the matrix's borders
+            mult*j+col<0 || mult*j+col>=8 )
+            return 0;
+        if (gameBoard[mult*i+row][mult*j+col] == 0) //returns false if after the enemy's pieces the next space is empty
+            return 0;
+        if (gameBoard[mult*i+row][mult*j+col] == player) //returns true if a player's piece is found
+            return 1;
+    }
+}
+int indexesToMove(int row, int col){ //converts board indexes to moves
+
+    return (row+1)*10+col+1;
+
+}
+int checkEnemies(int gameBoard[8][8], int player, int row, int col){ //checks if there are enemies nearby the player's move
+
+   for(int i=-1; i<=1; i++){ //avoids crossing the matrix's borders
+       if(row+i>=8 || row+i<0){
+           continue;
+       }
+       for(int j=-1; j<=1; j++){
+           if(col+j>=8|| col+j<0){
+                continue;
+            }
+            if(gameBoard[row+i][col+j] !=player && gameBoard[row+i][col+j]!=0){
+                if(checkTrapped(gameBoard,player,row,col,i,j)) //checks if in each direction, if the enemy's pieces are trapped
+                    return 1;
+            }
+        }
+    }
+    return 0;
+}
+void checkAllMoves(int gameBoard[8][8],int player, int avail[]){ //checks all possible moves
+
+    int n=0;
+    for(int i=0; i<8; i++){
+        for(int j=0; j<8; j++){
+            if(gameBoard[i][j] == 0){
+                if(checkEnemies(gameBoard, player, i, j)){
+                    avail[n]= indexesToMove(i,j); //if checkEnemies is true, the move will be stores in avail[]
+                    n++;
+                }
+            }
+        }
+    }
+}
+
+void printAvailOpt(int avail[], int player)
+{
+	for(int i=0; avail[i]!=0; i++)
+	{
+		colunaverde = 2+(avail[i] % 10 -1)*(BSP_LCD_GetYSize()/8); //converts moves to board indexes, col
+		linhaverde = 2+(avail[i] / 10 -1)*(BSP_LCD_GetYSize()/8);//converts moves to board indexes, line
+
+		BSP_LCD_SetTextColor(LCD_COLOR_LIGHTGRAY);
+		BSP_LCD_FillRect(colunaverde, linhaverde, 57, 57);
+		if(player==1)
+		{
+			BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+		}
+		if(player==2)
+		{
+			BSP_LCD_SetTextColor(LCD_COLOR_RED);
+		}
+	}
+}
+void unprintAvailOpt(int avail[], int player)
+{
+	for(int i=0; avail[i]!=0; i++)
+		{
+			colunaverde = 2+(avail[i] % 10 -1)*(BSP_LCD_GetYSize()/8); //converts moves to board indexes, col
+			linhaverde = 2+(avail[i] / 10 -1)*(BSP_LCD_GetYSize()/8);//converts moves to board indexes, line
+			avail[i]=0;
+			BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
+			BSP_LCD_FillRect(colunaverde, linhaverde, 57, 57);
+		}
+
+}
+void resetAllEnemies(int allEnemies[8][2]){ //cleans the allEnemies[] array
+
+    for(int i=0; i<8; i++){
+        for(int j=0; j<2; j++){
+            allEnemies[i][j]=-2;
+        }
+    }
+}
+void exposeAllEnemies(int gameBoard[8][8], int row, int col, int player, int allEnemies[8][2]){ //fills the allEnemies[] array
+
+    int n = 0;
+    for(int i=-1; i<=1; i++){ //checks if we don't cross the matrix's borders
+       if(row+i>=8 || row+i<0){
+           continue;
+       }
+       for(int j=-1; j<=1; j++){
+           if(col+j>=8|| col+j<0){
+                continue;
+            }
+            if(gameBoard[row+i][col+j] !=player && gameBoard[row+i][col+j] !=0){
+                if(checkTrapped(gameBoard,player,row,col,i,j)){ //checks if the enemies are trapped, and, if so, stores the coordinates' differences from the move in the allEnemies array
+                    allEnemies[n][0]=i;
+                    allEnemies[n][1]=j;
+                    n++;
+                }
+            }
+       }
+    }
+}
+void theConverter(int gameBoard[8][8], int dirRow, int dirCol, int row, int col, int player)//converts the trapped enemy's pieces to player's pieces
+{
+    do{
+        gameBoard[row][col] = player;//follows the enemy's direction until it reaches player's piece and convert all the pieces in between
+        if(player==1)
+        	BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+        if(player==2)
+        	BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        BSP_LCD_FillCircle(col*(BSP_LCD_GetYSize()/8) + 30, row*(BSP_LCD_GetYSize()/8) + 30, 20);
+        row += dirRow;
+        col += dirCol;
+        if(row<0 || row>=8 || col<0 || col>=8){
+            break;
+        }
+    }while(gameBoard[row][col] != player && gameBoard[row][col] !=0);
+
+}
+void countScores()
+{
+
+	for(int i=0; i<8; i++)
+	{
+		for(int j=0; j<8; j++)
+		{
+			if(gameBoard[i][j]==1)
+				countRed++;
+			if(gameBoard[i][j]==2)
+				countBlack++;
+		}
+	}
+}
+void printScores()
+{
+	countScores();
+	char red[15];
+	char black[15];
+
+	BSP_LCD_SetFont(&Font12);
+	sprintf(red, "Vermelho = %d ", countRed);
+	BSP_LCD_DisplayStringAt(0, 100, (uint8_t *) red, RIGHT_MODE);
+
+	sprintf(black, "Preto = %d ", countBlack);
+	BSP_LCD_DisplayStringAt(0, 150, (uint8_t *) black, RIGHT_MODE);
+	countRed=0;
+	countBlack=0;
+}
+
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
 {
 
@@ -157,6 +350,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	}
 }
 
+
 /* USER CODE END 0 */
 
 /**
@@ -170,6 +364,11 @@ int main(void)
 	char space[]={"                  "};
 	uint32_t ConvertedValue;
 	long int JTemp;
+	int avail[8*8]={0};//create array of available moves and set it to all zeros
+	int play=1;
+	int allEnemies[8][2]; //creates array with the directions(differences between enemy coordinates and the move's coordinates) of all the enemies nearby
+	char nextPlayer[20];
+
   /* USER CODE END 1 */
   
 
@@ -207,6 +406,7 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim6);
   BSP_LED_Init(LED_RED);
   BSP_LED_Init(LED_GREEN);
+  BoardMatrixInitial();
   BSP_LCD_Init();
   LCD_Config();
   HAL_ADC_Start(&hadc1);
@@ -216,6 +416,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
 		if(flag)  //quando passar 2 segundos	//Sample and print temperature on lcd
@@ -225,37 +426,88 @@ int main(void)
 			JTemp = ((((ConvertedValue * VREF) / MAX_CONVERTED_VALUE)
 					- VSENS_AT_AMBIENT_TEMP) * 10 / AVG_SLOPE) + AMBIENT_TEMP; //converter a temperatura
 
+			BSP_LCD_SetFont(&Font24);
 			sprintf(string, "Temp = %d ", (int) JTemp);
 			BSP_LCD_DisplayStringAt(0, 9 * BSP_LCD_GetYSize() / 10,
 					(uint8_t *) space, RIGHT_MODE);
 			BSP_LCD_DisplayStringAt(0, 9 * BSP_LCD_GetYSize() / 10,
 					(uint8_t *) string, RIGHT_MODE);
 		}
-
-
-		if(jogada)
+		if(playgame==1)
 		{
-			HAL_Delay(100);
-			if(TS_State.touchX[0]<BSP_LCD_GetYSize() )
+			if(play==1)
 			{
-				setPosition(TS_State.touchX[0], TS_State.touchY[0]);
-				if(contador%2==0)
-				{
-					BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
-					BSP_LCD_FillCircle(coluna, linha, 20);
-				}
-				else
-				{
-					BSP_LCD_SetTextColor(LCD_COLOR_RED);
-					BSP_LCD_FillCircle(coluna, linha, 20);
-				}
-				contador++;
+				BSP_LCD_SetFont(&Font16);
+				sprintf(nextPlayer, "Black it's your time!");
+				BSP_LCD_DisplayStringAt(0, 300, (uint8_t *) nextPlayer, RIGHT_MODE);
+				checkAllMoves(gameBoard, 1, avail);
+				printAvailOpt( avail, 1);
+				printScores();
+			}
+			if(play==2)
+			{
+				BSP_LCD_SetFont(&Font16);
+				sprintf(nextPlayer, "  Red it's your time!");
+				BSP_LCD_DisplayStringAt(0, 300, (uint8_t *) nextPlayer, RIGHT_MODE);
+				checkAllMoves(gameBoard, 2, avail);
+				printAvailOpt( avail, 2);
+				printScores();
 			}
 
-			jogada=0;
-			f_lcdPressed = 0;
+			if(jogada)
+			{
+				HAL_Delay(100);
+				if(TS_State.touchX[0]<BSP_LCD_GetYSize() )
+				{
+					setPosition(TS_State.touchX[0], TS_State.touchY[0]);
+					if(play==1)
+					{
+						if(checkBoardPlace(gameBoard)==0)
+						{
+							//check if avail
+							if(BSP_LCD_ReadPixel(coluna, linha)==LCD_COLOR_LIGHTGRAY)
+							{
+								putInBoard(gameBoard, 1);
+								unprintAvailOpt(avail, 1);
+								BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+								BSP_LCD_FillCircle(coluna, linha, 20);
+								resetAllEnemies(allEnemies);
+								exposeAllEnemies(gameBoard,(linha-30)/getxyBoardPosition,(coluna-30)/getxyBoardPosition,1,allEnemies);
+								for(int i=0; allEnemies[i][0]!=-2; i++){ //converts all the trapped enemies into own's symbols
+									  theConverter(gameBoard, allEnemies[i][0], allEnemies[i][1], (linha-30)/getxyBoardPosition, (coluna-30)/getxyBoardPosition, 1);
+								}
+								//exposeAllEnemies(int gameBoard[8][8], int row, int col, int player, int allEnemies[8][2])
+								play=2;
+							}
+						}
+					}
+					else
+					{
+						if(checkBoardPlace(gameBoard)==0)
+						{
+							if(BSP_LCD_ReadPixel(coluna, linha)==LCD_COLOR_LIGHTGRAY)
+							{
+								putInBoard(gameBoard, 2);
+								unprintAvailOpt(avail, 1);
+								BSP_LCD_SetTextColor(LCD_COLOR_RED);
+								BSP_LCD_FillCircle(coluna, linha, 20);
+								unprintAvailOpt( avail, 2);
+								resetAllEnemies(allEnemies);
+								exposeAllEnemies(gameBoard,(linha-30)/getxyBoardPosition,(coluna-30)/getxyBoardPosition,2,allEnemies);
+								for(int i=0; allEnemies[i][0]!=-2; i++){ //converts all the trapped enemies into own's symbols
+									theConverter(gameBoard, allEnemies[i][0], allEnemies[i][1], (linha-30)/getxyBoardPosition, (coluna-30)/getxyBoardPosition, 2);
+								}
+								play=1;
+							}
+						}
+					}
+					contador++;
+				}
 
+				jogada=0;
+				f_lcdPressed = 0;
 
+			}
 		}
 		/* USER CODE END WHILE */
 
@@ -747,11 +999,11 @@ static void LCD_Config(void)
   BSP_LCD_DrawRect(0, 0, BSP_LCD_GetYSize(), BSP_LCD_GetYSize());
   BSP_LCD_DrawRect(0, 60, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
 
-  for(int i=1; i<8; i++)
+  for(int i=1; i<8; i++)//colunas
   {
 	  BSP_LCD_DrawRect(i*BSP_LCD_GetYSize()/8, 0, BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize());
   }
-  for(int j=0; j<8; j++)
+  for(int j=0; j<8; j++)//linhas
   {
 	  BSP_LCD_DrawRect(1,j*BSP_LCD_GetYSize()/8, BSP_LCD_GetYSize(), BSP_LCD_GetYSize()/8);
   }
@@ -760,13 +1012,18 @@ static void LCD_Config(void)
   BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
   BSP_LCD_SetFont(&Font24);
 
+
   BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
   BSP_LCD_FillCircle(lincol3, lincol3, 20);
+  putInBoardFirstPositions(gameBoard, 1, 3, 3);
   BSP_LCD_FillCircle(lincol4, lincol4, 20);
+  putInBoardFirstPositions(gameBoard, 1, 4, 4);
 
   BSP_LCD_SetTextColor(LCD_COLOR_RED);
   BSP_LCD_FillCircle(lincol3, lincol4, 20);
+  putInBoardFirstPositions(gameBoard, 2, 4, 3);
   BSP_LCD_FillCircle(lincol4, lincol3, 20);
+  putInBoardFirstPositions(gameBoard, 2, 3, 4);
 
   BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
 
