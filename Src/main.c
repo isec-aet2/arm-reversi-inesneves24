@@ -20,6 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -27,6 +28,7 @@
 #include "stm32f769i_discovery_lcd.h"
 #include "stm32f769i_discovery_ts.h"
 #include "stdio.h"
+#include "stdlib.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,6 +59,7 @@
 #define jpreto      1
 #define jvermelho   2
 #define semjogador  0
+#define ARMplayer   3
 
 
 
@@ -65,7 +68,6 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 volatile int flag=0;
-volatile int contador=0;
 volatile int jogada;
 volatile int linha;
 volatile int coluna;
@@ -84,6 +86,16 @@ int play=1;
 int allEnemies[ncol][2]; //creates array with the directions(differences between enemy coordinates and the move's coordinates) of all the enemies nearby
 char nextPlayer[25];
 char winmessage=0;
+volatile int segundos=0;
+int minutos=0;
+volatile int timeflag=0;
+unsigned int nBytes;
+volatile int countdown = 20;
+volatile int timeout=0;
+volatile int start=0;
+volatile int ARMplayerflag=0;
+int jpretotimeout=0;
+int jvermelhotimeout=0;
 
 /* USER CODE END PM */
 
@@ -96,7 +108,11 @@ DSI_HandleTypeDef hdsi;
 
 LTDC_HandleTypeDef hltdc;
 
+SD_HandleTypeDef hsd2;
+
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
+TIM_HandleTypeDef htim13;
 
 SDRAM_HandleTypeDef hsdram1;
 
@@ -112,7 +128,10 @@ static void MX_DMA2D_Init(void);
 static void MX_DSIHOST_DSI_Init(void);
 static void MX_FMC_Init(void);
 static void MX_LTDC_Init(void);
+static void MX_SDMMC2_SD_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM7_Init(void);
+static void MX_TIM13_Init(void);
 /* USER CODE BEGIN PFP */
 static void LCD_Config();
 static void LCD_GameBoard(void);
@@ -251,7 +270,7 @@ void printAvailOpt(int avail[], int player)
 		{
 			BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
 		}
-		if(player==jvermelho)
+		if(player==jvermelho || player==ARMplayer)
 		{
 			BSP_LCD_SetTextColor(LCD_COLOR_RED);
 		}
@@ -304,7 +323,7 @@ void theConverter(int dirRow, int dirCol, int row, int col, int player)//convert
         gameBoard[row][col] = player;//follows the enemy's direction until it reaches player's piece and convert all the pieces in between
         if(player==jpreto)
         	BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
-        if(player==jvermelho)
+        if(player==jvermelho || player==ARMplayer)
         	BSP_LCD_SetTextColor(LCD_COLOR_RED);
         BSP_LCD_FillCircle(col*(BSP_LCD_GetYSize()/ncol) + 30, row*(BSP_LCD_GetYSize()/ncol) + 30, 20);
         row += dirRow;
@@ -324,7 +343,7 @@ void countScores()
 		{
 			if(gameBoard[i][j]==jpreto)
 				countBlack++;
-			if(gameBoard[i][j]==jvermelho)
+			if(gameBoard[i][j]==jvermelho || gameBoard[i][j]==ARMplayer)
 				countRed++;
 		}
 	}
@@ -335,14 +354,23 @@ void printScores()
 	char red[25];
 	char black[25];
 
-	BSP_LCD_SetFont(&Font12);
-	sprintf(red, "Vermelho = %d ", countRed);
-	BSP_LCD_DisplayStringAt(0, 100, (uint8_t *) red, RIGHT_MODE);
 
-	sprintf(black, "Preto = %d ", countBlack);
-	BSP_LCD_DisplayStringAt(0, 150, (uint8_t *) black, RIGHT_MODE);
+	if(ARMplayerflag==0){
+		BSP_LCD_SetFont(&Font16);
+		sprintf(red, " Vermelho = %d ", countRed);
+		BSP_LCD_DisplayStringAt(0, 90, (uint8_t *) red, RIGHT_MODE);
+	}
+	if(ARMplayerflag==1){
+		BSP_LCD_SetFont(&Font16);
+		sprintf(red, "  ARM  = %d ", countRed);
+		BSP_LCD_DisplayStringAt(0, 90, (uint8_t *) red, RIGHT_MODE);
+	}
+
+	sprintf(black, " Preto = %d ", countBlack);
+	BSP_LCD_DisplayStringAt(0, 110, (uint8_t *) black, RIGHT_MODE);
 	countRed=0;
 	countBlack=0;
+
 }
 void setTemp()
 {
@@ -371,6 +399,40 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
 		{
 			flag++;
 		}
+	if(htim->Instance == TIM7)
+	{
+		if(playgame==emjogo)
+		{
+			timeflag=1;
+			segundos++;
+			if(segundos==60)
+			{
+				segundos=0;
+				minutos++;
+			}
+		}
+	}
+	if(htim->Instance == TIM13)
+	{
+		if(start==1)
+		{
+			countdown--;
+			if(countdown==0)
+			{
+				countdown=20;
+				timeout=1;
+			}
+		}
+	}
+}
+void projectTimeLeft()
+{
+	char timeleft[10];
+
+
+	 BSP_LCD_SetFont(&Font24);
+	sprintf(timeleft, "%.2d", countdown);
+	BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2-50, (uint8_t *) timeleft, RIGHT_MODE);
 }
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
@@ -416,6 +478,38 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	}
 
 }
+void playRandom()
+ {
+	int i = 0, r = 0;
+
+	while (avail[i] != 0) {
+		i++;
+	}
+	r = rand() % i;
+
+	colunaverde =  (avail[r] % 10 - 1) * (BSP_LCD_GetYSize() / ncol);
+	linhaverde =  (avail[r] / 10 - 1) * (BSP_LCD_GetYSize() / ncol);
+
+	coluna = colunaverde + BSP_LCD_GetYSize()/(2*ncol);
+	linha = linhaverde + BSP_LCD_GetYSize()/(2*ncol);
+
+	for(int j=0; j<i; j++)
+	{
+		avail[j]=0;
+	}
+	BSP_LCD_SetTextColor(LCD_COLOR_RED);
+	BSP_LCD_FillCircle(coluna, linha, 20);
+	resetAllEnemies(allEnemies);
+	exposeAllEnemies((linha - 30) / getxyBoardPosition,
+			(coluna - 30) / getxyBoardPosition, ARMplayer, allEnemies);
+	for (int i = 0; allEnemies[i][0] != -2; i++) { //converts all the trapped enemies into own's symbols
+		theConverter(allEnemies[i][0], allEnemies[i][1],
+				(linha - 30) / getxyBoardPosition,
+				(coluna - 30) / getxyBoardPosition, ARMplayer);
+
+	}
+}
+
 void reversiGame() {
 
 
@@ -424,14 +518,37 @@ void reversiGame() {
 		sprintf(nextPlayer, "Black it's your time!");
 		BSP_LCD_DisplayStringAt(0, 300, (uint8_t *) nextPlayer, RIGHT_MODE);
 		checkAllMoves( jpreto, avail);
+
 		if (avail[0] == 0) {
 			playgame = fimdojogo;
 			unprintAvailOpt(avail);
 			BSP_LCD_Clear(LCD_COLOR_WHITE);
+			return;
 
 		}
 		printAvailOpt(avail, jpreto);
 		printScores();
+
+		start=1;
+		projectTimeLeft();
+		if(timeout==1)
+		{
+			timeout=0;
+			jpretotimeout++;
+			unprintAvailOpt(avail);
+			if(ARMplayerflag==0)
+				play=jvermelho;
+			if(ARMplayerflag==1)
+				play=ARMplayer;
+			if(jpretotimeout==3)
+			{
+				BSP_LED_On(LED2);
+				playgame=fimdojogo;
+				countRed=64;
+				return;
+			}
+		}
+
 	}
 	if (play == jvermelho) {
 		BSP_LCD_SetFont(&Font16);
@@ -441,9 +558,43 @@ void reversiGame() {
 		if (avail[0] == 0) {
 			playgame = fimdojogo;
 			BSP_LCD_Clear(LCD_COLOR_WHITE);
+			return;
 		}
 		printAvailOpt(avail, jvermelho);
 		printScores();
+
+		start=1;
+		projectTimeLeft();
+		if(timeout==1)
+		{
+			timeout=0;
+			jvermelhotimeout++;
+			unprintAvailOpt(avail);
+			play=jpreto;
+			if(jvermelhotimeout==3)
+			{
+				BSP_LED_On(LED2);
+				playgame=fimdojogo;
+				countBlack=64;
+				return;
+			}
+		}
+	}
+	if (play==ARMplayer)
+	{
+		BSP_LCD_SetFont(&Font16);
+		sprintf(nextPlayer, "  ARM it's your time!");
+		BSP_LCD_DisplayStringAt(0, 300, (uint8_t *) nextPlayer, RIGHT_MODE);
+		checkAllMoves(ARMplayer, avail);
+		if (avail[0] == 0) {
+			playgame = fimdojogo;
+			BSP_LCD_Clear(LCD_COLOR_WHITE);
+			return;
+		}
+		printScores();
+		playRandom();
+		play = jpreto;
+		countdown=20;
 	}
 
 	if (jogada) {
@@ -462,10 +613,14 @@ void reversiGame() {
 						for (int i = 0; allEnemies[i][0] != -2; i++) { //converts all the trapped enemies into own's symbols
 							theConverter( allEnemies[i][0],allEnemies[i][1],(linha - 30) / getxyBoardPosition,(coluna - 30) / getxyBoardPosition, jpreto);
 						}
-						play = jvermelho;
+						if(ARMplayerflag==0)
+							play=jvermelho;
+						if(ARMplayerflag==1)
+							play=ARMplayer;
+						countdown=20;
 					}
 				}
-			} else {
+			} else if (play == jvermelho) {
 				if (checkBoardPlace() == 0) {
 					if (BSP_LCD_ReadPixel(coluna, linha) == LCD_COLOR_LIGHTGRAY) {
 						putInBoard(jvermelho);
@@ -478,16 +633,39 @@ void reversiGame() {
 							theConverter( allEnemies[i][0],allEnemies[i][1],(linha - 30) / getxyBoardPosition,(coluna - 30) / getxyBoardPosition, jvermelho);
 						}
 						play = jpreto;
+						countdown=20;
 					}
 				}
 			}
-			contador++;
 		}
 
 		jogada = 0;
 		f_lcdPressed = 0;
 
 	}
+}
+void writeInCard(int player, int pontos)
+{
+
+	char string[50];
+	if(f_mount (&SDFatFS, SDPath, 0)!=FR_OK) //activa o sistema
+	    		  	    	Error_Handler();
+
+	if(f_open (&SDFile, "resultados.txt", FA_CREATE_ALWAYS | FA_WRITE)!=FR_OK) //tenta criar ficheiro em modo escrita e testa se detectou SD
+	    		  	    Error_Handler();
+
+	if(player!=0)
+	{
+		sprintf(string, "Ganhou o jogador %d, com %d pontos em %d:%d minutos.", player, pontos, minutos, segundos);
+	}
+	else if(player==0)
+	{
+		sprintf(string, "Empate em %d:%d minutos.", minutos, segundos);
+	}
+	f_write(&SDFile, string, strlen(string), &nBytes);
+
+
+	f_close (&SDFile);
 }
 void endOfGame() {
 
@@ -501,9 +679,19 @@ void endOfGame() {
 		BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
 		BSP_LCD_SetBackColor(LCD_COLOR_LIGHTRED);
 		BSP_LCD_SetFont(&Font24);
-		sprintf(winner, "  RED IS THE WINNER");
+		if(ARMplayerflag==0)
+		{
+			sprintf(winner, "  RED IS THE WINNER");
+			writeInCard(jvermelho, countRed);
+		}
+		if(ARMplayerflag==1)
+		{
+			sprintf(winner, "  ARM IS THE WINNER");
+			writeInCard(ARMplayer, countRed);
+		}
 		BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2, (uint8_t *) winner, CENTER_MODE);
 		setTemp();
+
 
 	}
 	else if (countRed < countBlack) {
@@ -514,6 +702,7 @@ void endOfGame() {
 		sprintf(winner, "BLACK IS THE WINNER");
 		BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2, (uint8_t *) winner, CENTER_MODE);
 		setTemp();
+		writeInCard(jpreto, countBlack);
 
 	}
 	else if(countRed==countBlack){
@@ -524,6 +713,7 @@ void endOfGame() {
 		sprintf(winner, "IT'S A TIE");
 		BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2, (uint8_t *) winner, CENTER_MODE);
 		setTemp();
+		writeInCard(0, 0);
 	}
 
 
@@ -533,15 +723,19 @@ void endOfGame() {
 
 	countBlack=0;
 	countRed=0;
+	start=0;
+	timeout=0;
+	countdown=20;
 	while(winmessage)
 	{
 		setTemp();
 	}
 }
+
 void GameMenu()
 {
 
-	char reversi[10];
+	char reversi[25];
 
 	BSP_LCD_Clear(LCD_COLOR_WHITE);
 	BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
@@ -554,9 +748,18 @@ void GameMenu()
 	BSP_LCD_FillRect(BSP_LCD_GetXSize()/4, BSP_LCD_GetYSize()/4, BSP_LCD_GetXSize()/2, BSP_LCD_GetYSize()/4);
 	BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
 
-
-	sprintf(reversi, "REVERSI");
+	sprintf(reversi, "REVERSI - two players");
 	BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize()/3, (uint8_t *)reversi, CENTER_MODE);
+
+	BSP_LCD_DrawRect(BSP_LCD_GetXSize()/4,BSP_LCD_GetYSize()/2 +10, BSP_LCD_GetXSize()/2, BSP_LCD_GetYSize()/4);
+	BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+	BSP_LCD_SetBackColor(LCD_COLOR_BLACK);
+	BSP_LCD_FillRect(BSP_LCD_GetXSize()/4, BSP_LCD_GetYSize()/2 +10, BSP_LCD_GetXSize()/2, BSP_LCD_GetYSize()/4);
+	BSP_LCD_SetTextColor(LCD_COLOR_RED);
+
+	sprintf(reversi, "REVERSI - single player");
+	BSP_LCD_DisplayStringAt(0, 2* BSP_LCD_GetYSize()/3 -20, (uint8_t *)reversi, CENTER_MODE);
+
 	BSP_LCD_SetFont(&Font16);
 	BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
 
@@ -577,6 +780,16 @@ void GameMenu()
 			if(TS_State.touchY[0]<BSP_LCD_GetYSize()/2 && TS_State.touchY[0]>BSP_LCD_GetYSize()/4 )
 			{
 				playgame=emjogo;
+				ARMplayerflag=0;
+				BSP_LED_Off(LED2);
+
+			}
+			if(TS_State.touchY[0]>BSP_LCD_GetYSize()/2 +10 && TS_State.touchY[0]<3*BSP_LCD_GetYSize()/4 -10)
+			{
+				playgame=emjogo;
+				ARMplayerflag=1;
+
+
 			}
 			unprintAvailOpt(avail);
 			LCD_GameBoard();
@@ -593,6 +806,21 @@ void resetGame()
 			gameBoard[i][j]=0;
 		}
 	}
+	minutos=0;
+	segundos=0;
+	play=jpreto;
+	jpretotimeout=0;
+	jvermelhotimeout=0;
+}
+void printTime()
+{
+	 char tempo[20];
+	 timeflag=0;
+
+	 BSP_LCD_SetFont(&Font24);
+	  sprintf(tempo, "Time:%.2d:%.2d",minutos, segundos);
+	  BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2, (uint8_t *) tempo, RIGHT_MODE);
+
 }
 
 
@@ -640,9 +868,15 @@ int main(void)
   MX_DSIHOST_DSI_Init();
   MX_FMC_Init();
   MX_LTDC_Init();
+  MX_SDMMC2_SD_Init();
   MX_TIM6_Init();
+  MX_TIM7_Init();
+  MX_TIM13_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_Base_Start_IT(&htim7);
+  HAL_TIM_Base_Start_IT(&htim13);
   BSP_LED_Init(LED_RED);
   BSP_LED_Init(LED_GREEN);
   BoardMatrixInitial();
@@ -662,6 +896,10 @@ int main(void)
 		{
 			setTemp();
 
+		}
+		if(timeflag)
+		{
+			printTime();
 		}
 
 		if(playgame==emjogo)
@@ -707,7 +945,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLM = 25;
   RCC_OscInitStruct.PLL.PLLN = 400;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLQ = 8;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -731,13 +969,16 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LTDC;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LTDC|RCC_PERIPHCLK_SDMMC2
+                              |RCC_PERIPHCLK_CLK48;
   PeriphClkInitStruct.PLLSAI.PLLSAIN = 192;
   PeriphClkInitStruct.PLLSAI.PLLSAIR = 2;
   PeriphClkInitStruct.PLLSAI.PLLSAIQ = 2;
   PeriphClkInitStruct.PLLSAI.PLLSAIP = RCC_PLLSAIP_DIV2;
   PeriphClkInitStruct.PLLSAIDivQ = 1;
   PeriphClkInitStruct.PLLSAIDivR = RCC_PLLSAIDIVR_2;
+  PeriphClkInitStruct.Clk48ClockSelection = RCC_CLK48SOURCE_PLL;
+  PeriphClkInitStruct.Sdmmc2ClockSelection = RCC_SDMMC2CLKSOURCE_CLK48;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -1025,6 +1266,34 @@ static void MX_LTDC_Init(void)
 }
 
 /**
+  * @brief SDMMC2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SDMMC2_SD_Init(void)
+{
+
+  /* USER CODE BEGIN SDMMC2_Init 0 */
+
+  /* USER CODE END SDMMC2_Init 0 */
+
+  /* USER CODE BEGIN SDMMC2_Init 1 */
+
+  /* USER CODE END SDMMC2_Init 1 */
+  hsd2.Instance = SDMMC2;
+  hsd2.Init.ClockEdge = SDMMC_CLOCK_EDGE_RISING;
+  hsd2.Init.ClockBypass = SDMMC_CLOCK_BYPASS_DISABLE;
+  hsd2.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
+  hsd2.Init.BusWide = SDMMC_BUS_WIDE_1B;
+  hsd2.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
+  hsd2.Init.ClockDiv = 0;
+  /* USER CODE BEGIN SDMMC2_Init 2 */
+
+  /* USER CODE END SDMMC2_Init 2 */
+
+}
+
+/**
   * @brief TIM6 Initialization Function
   * @param None
   * @retval None
@@ -1044,7 +1313,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 19999;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 9999;
+  htim6.Init.Period = 19999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -1059,6 +1328,75 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 9999;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 9999;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
+  * @brief TIM13 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM13_Init(void)
+{
+
+  /* USER CODE BEGIN TIM13_Init 0 */
+
+  /* USER CODE END TIM13_Init 0 */
+
+  /* USER CODE BEGIN TIM13_Init 1 */
+
+  /* USER CODE END TIM13_Init 1 */
+  htim13.Instance = TIM13;
+  htim13.Init.Prescaler = 9999;
+  htim13.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim13.Init.Period = 9999;
+  htim13.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim13.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim13) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM13_Init 2 */
+
+  /* USER CODE END TIM13_Init 2 */
 
 }
 
@@ -1121,8 +1459,8 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOI_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
@@ -1132,6 +1470,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PI13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOI, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PI15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOI, &GPIO_InitStruct);
 
@@ -1203,13 +1547,25 @@ static void LCD_GameBoard(void)
   BSP_LCD_FillCircle(lincol4, lincol4, 20);
   putInBoardFirstPositions( jpreto, 4, 4);
 
-  BSP_LCD_SetTextColor(LCD_COLOR_RED);
-  BSP_LCD_FillCircle(lincol3, lincol4, 20);
-  putInBoardFirstPositions(jvermelho, 4, 3);
-  BSP_LCD_FillCircle(lincol4, lincol3, 20);
-  putInBoardFirstPositions(jvermelho, 3, 4);
-
+  if(ARMplayerflag==0)
+  {
+	  BSP_LCD_SetTextColor(LCD_COLOR_RED);
+	  BSP_LCD_FillCircle(lincol3, lincol4, 20);
+	  putInBoardFirstPositions(jvermelho, 4, 3);
+	  BSP_LCD_FillCircle(lincol4, lincol3, 20);
+	  putInBoardFirstPositions(jvermelho, 3, 4);
+  }
+  if(ARMplayerflag==1)
+  {
+	  BSP_LCD_SetTextColor(LCD_COLOR_RED);
+	  BSP_LCD_FillCircle(lincol3, lincol4, 20);
+	  putInBoardFirstPositions(ARMplayer, 4, 3);
+	  BSP_LCD_FillCircle(lincol4, lincol3, 20);
+	  putInBoardFirstPositions(ARMplayer, 3, 4);
+  }
   BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+
+
 }
 /* USER CODE END 4 */
 
