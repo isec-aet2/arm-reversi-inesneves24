@@ -646,26 +646,43 @@ void reversiGame() {
 }
 void writeInCard(int player, int pontos)
 {
-
+	FRESULT res = FR_OK;
 	char string[50];
-	if(f_mount (&SDFatFS, SDPath, 0)!=FR_OK) //activa o sistema
-	    		  	    	Error_Handler();
 
-	if(f_open (&SDFile, "resultados.txt", FA_CREATE_ALWAYS | FA_WRITE)!=FR_OK) //tenta criar ficheiro em modo escrita e testa se detectou SD
-	    		  	    Error_Handler();
+	res = f_mount (&SDFatFS, SDPath, 0);
+	if(res != FR_OK)	//activa o sistema
+	{
+		Error_Handler();
+	}
+	HAL_Delay(200);
+
+	res = f_open (&SDFile, "res.txt", FA_OPEN_APPEND | FA_WRITE);
+	if(res != FR_OK)	//activa o sistema
+	{
+		Error_Handler();
+	}
 
 	if(player!=0)
 	{
-		sprintf(string, "Ganhou o jogador %d, com %d pontos em %d:%d minutos.", player, pontos, minutos, segundos);
+		sprintf(string, "Ganhou o jogador %d, com %d pontos em %d:%d minutos. ", player, pontos, minutos, segundos);
 	}
 	else if(player==0)
 	{
-		sprintf(string, "Empate em %d:%d minutos.", minutos, segundos);
+		sprintf(string, "Empate em %d:%d minutos. ", minutos, segundos);
 	}
-	f_write(&SDFile, string, strlen(string), &nBytes);
+	res = f_write(&SDFile, string, strlen(string), &nBytes);
+	if(res != FR_OK)	//activa o sistema
+	{
+		Error_Handler();
+	}
 
 
-	f_close (&SDFile);
+	res = f_close (&SDFile);
+	if(res != FR_OK)	//activa o sistema
+	{
+		Error_Handler();
+	}
+
 }
 void endOfGame() {
 
