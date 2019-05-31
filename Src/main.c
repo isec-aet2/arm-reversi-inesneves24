@@ -815,7 +815,6 @@ void endOfGame() {
 		BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2, (uint8_t *) winner, CENTER_MODE);
 		setTemp();
 		writeInCard(jpreto, countBlack);//escreve resultados no cartão
-
 	}
 	else if(countRed==countBlack){//se houve empate
 		BSP_LCD_Clear(LCD_COLOR_WHITE);
