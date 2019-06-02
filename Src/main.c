@@ -756,11 +756,11 @@ void writeInCard(int player, int pontos)
 
 	if(player!=0)//se o jogador for o 1(preto), 2(vermelho) ou 3(ARM)
 	{
-		sprintf(string, "Ganhou o jogador %d, com %d pontos em %d:%d minutos. ", player, pontos, minutos, segundos);//escrever quem ganhou, com quantos pontos e em quanto tempo
+		sprintf(string, "\nGanhou o jogador %d, com %d pontos em %d:%d minutos. ", player, pontos, minutos, segundos);//escrever quem ganhou, com quantos pontos e em quanto tempo
 	}
 	else if(player==0)//se houve um empate
 	{
-		sprintf(string, "Empate em %d:%d minutos. ", minutos, segundos);//escreve quanto tempo durou o jogo
+		sprintf(string, "\nEmpate em %d:%d minutos. ", minutos, segundos);//escreve quanto tempo durou o jogo
 	}
 	res = f_write(&SDFile, string, strlen(string), &nBytes);//escreve resultados no ficheiro
 	if(res != FR_OK)
@@ -839,7 +839,8 @@ void endOfGame() {
 	countdown=20;
 	while(winmessage)//enquanto não for pressionado o push button
 	{
-		setTemp();
+		if(flag)
+			setTemp();
 	}
 }
 /*------------------------------------------------------------------------------------------------
