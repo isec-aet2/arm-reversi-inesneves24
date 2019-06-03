@@ -703,7 +703,7 @@ void reversiGame() {
 
 	if (jogada) {//se houve um toque no LCD
 		HAL_Delay(100);
-		if(TS_State.touchX[0]<BSP_LCD_GetXSize && TS_State.touchX[0]>30)
+		if(TS_State.touchX[0]<BSP_LCD_GetXSize && TS_State.touchX[0]>450)
 		{
 			if(TS_State.touchY[0]>235 && TS_State.touchY[0]<260)
 			{
