@@ -134,7 +134,6 @@ static void MX_TIM7_Init(void);
 static void MX_TIM13_Init(void);
 /* USER CODE BEGIN PFP */
 static void LCD_Config();
-static void LCD_GameBoard(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -188,6 +187,7 @@ void setPosition(uint16_t x, uint16_t y)
  obtém o valor l(linha) e c(coluna) para colocar no array de posições do jogo.
  Retorna o valor que se encontra nessa posição do array
 -------------------------------------------------------------------------------------------------*/
+static void LCD_GameBoard(void);
 int checkBoardPlace()
 {
 	//posição no LCD do x e do y a dividir pela largura de cada quadrado no LCD
@@ -515,7 +515,7 @@ void projectTimeLeft()
 	char timeleft[10];
 
 
-	 BSP_LCD_SetFont(&Font24);
+	BSP_LCD_SetFont(&Font24);
 	sprintf(timeleft, "%.2d", countdown);
 	BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() / 2-50, (uint8_t *) timeleft, RIGHT_MODE);
 }
@@ -548,10 +548,25 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	{
 		if(playgame==emjogo)//se foi durante um jogo
 		{
-			winmessage=1; //flag para mostrar a mensagem de vitória
-			playgame=fimdojogo; //assialar o fim do jogo
-			BSP_LCD_Clear(LCD_COLOR_WHITE); //limpa LCD
-			unprintAvailOpt(avail);//remove quadrados cinzentos
+
+			if (play == jpreto) {
+				unprintAvailOpt(avail);
+				if (ARMplayerflag == 0)
+					play = jvermelho;
+				if (ARMplayerflag == 1)
+					play = ARMplayer;
+
+			} else if (play == jvermelho || play == ARMplayer) {
+				play = jpreto;
+				unprintAvailOpt(avail);
+			}
+			winmessage++; //flag para mostrar a mensagem de vitória
+			if(winmessage==2)
+			{
+				playgame=fimdojogo; //assialar o fim do jogo
+				BSP_LCD_Clear(LCD_COLOR_WHITE); //limpa LCD
+				unprintAvailOpt(avail);//remove quadrados cinzentos
+			}
 		}
 
 		else if(playgame==fimdojogo)//se estiver a mostrar mensagem de vitória
@@ -688,6 +703,14 @@ void reversiGame() {
 
 	if (jogada) {//se houve um toque no LCD
 		HAL_Delay(100);
+		if(TS_State.touchX[0]<BSP_LCD_GetXSize && TS_State.touchX[0]>30)
+		{
+			if(TS_State.touchY[0]>235 && TS_State.touchY[0]<260)
+			{
+					minutos=0;
+					segundos=0;
+			}
+		}
 		if (TS_State.touchX[0] < BSP_LCD_GetYSize()) {
 			setPosition(TS_State.touchX[0], TS_State.touchY[0]);//verificar que esse toque foi no tabuleiro
 			if (play == jpreto) {//verificar qual o jogador
@@ -843,6 +866,7 @@ void endOfGame() {
 			setTemp();
 	}
 }
+
 /*------------------------------------------------------------------------------------------------
 Imprime menu do jogo
 -------------------------------------------------------------------------------------------------*/
